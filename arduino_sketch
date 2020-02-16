@@ -1,0 +1,479 @@
+////////////////////////////////////////////////////////////////////////
+//////////////// DEFINE YOUR CAMERA MODEL AS DEFAULT ///////////////////
+////////////////////////////////////////////////////////////////////////
+/*
+  NIKON     ---> 1
+  CANON     ---> 2
+  SONY      ---> 3
+  PENTAX    ---> 4
+  PANASONIC ---> 5
+  OLYMPUS   ---> 6
+  LEICA     ---> 7
+  SIGMA     ---> 8
+*/
+// Default variables
+int model = 1; //NIKON
+int program = 1;
+
+// Variables
+int shutter, interval, intervalLapse, numPictures, storeNum;
+bool weAreInModeSelection, shutter_interval, shutter_interval_start, time_Lapse_start, lapse_interval;
+
+// Switches pin connection and LED display to Arduino UNO
+#include "LedControl.h"  // Library used for communcation with 7 segment
+LedControl lc = LedControl(12, 10, 9, 1); //  (DIN, CLK, LOAD, number of Max7219 chips)
+#define plus       2
+#define minus      3
+#define enter      4
+#define back       5
+#define go         6
+#define IR_EMITTER 7
+
+void setup() {
+  pinMode( IR_EMITTER, OUTPUT);
+  pinMode( plus,       INPUT_PULLUP);
+  pinMode( minus,      INPUT_PULLUP);
+  pinMode( back,       INPUT_PULLUP);
+  pinMode( enter,      INPUT_PULLUP);
+  pinMode( go,         INPUT_PULLUP);
+
+  lc.shutdown(0, false); // Wake up MAX7219
+  lc.setIntensity(0, 1); // Set brightness to low
+  lc.clearDisplay(0);  // Clear all displays connected to MAX7219 chip #
+
+  // Put zeros on both displays at startup
+  lc.setChar( 0, 0, ' ', false); // (Max7219 chip #, Digit, value, DP on or off)
+  lc.setChar( 0, 1, ' ', false);
+  lc.setChar( 0, 2, ' ', false);
+  lc.setChar( 0, 3, ' ', false);
+  lc.setChar( 0, 4, ' ', false);
+  lc.setChar( 0, 5, ' ', false);
+  lc.setChar( 0, 6, ' ', false);
+  lc.setChar( 0, 7, ' ', false);
+}
+
+// START AND PROMPT FOR PROGRAM SELECTION
+
+void loop() {
+  // PROGRAM 1 --> Single shot mode
+  // PROGRAM 2 --> Shutter time / interval time mode
+  // PROGRAM 3 --> Time Lapse mode
+  // PROGRAM 4 --> Camera Model
+
+  if (!weAreInModeSelection) {//We are at mode screen selection
+    setProgram();
+  } else { //We are in one of the desired programs
+
+    switch (program) {
+      case 1: // Single Shot
+        lc.setChar( 0, 7, ' ', true); lc.setChar( 0, 6, ' ', true); lc.setChar( 0, 5, ' ', true); lc.setChar( 0, 4, ' ', true);
+        lc.setChar( 0, 3, ' ', true); lc.setChar( 0, 2, ' ', true); lc.setChar( 0, 1, ' ', true); lc.setChar( 0, 0, ' ', true);
+        singleShot();
+        returnMainScreen();
+        break;
+
+      case 2: // Shuter_time/Interval
+        shutterTime();
+        returnMainScreen();
+        break;
+
+      case 3: // Time Lapse
+        timeLapse();
+        returnMainScreen();
+        break;
+
+      case 4: // Camera Model
+        changeModel();
+        returnMainScreen();
+        break;
+    }
+
+  }
+}
+
+///////////////
+// Functions //
+///////////////
+
+int gD(int val, int pos) { // Input number and split it into single digits for the led display.
+  char digits[6];
+  digits[0] = (val / 1)      % 10;
+  digits[1] = (val / 10)     % 10;
+  digits[2] = (val / 100)    % 10;
+  digits[3] = (val / 1000)   % 10;
+  digits[4] = (val / 10000)  % 10;
+  digits[5] = (val / 100000) % 10;
+  return digits[pos];
+}
+
+void setProgram() { //switch between single shot, timed shutter and time lapse modes.
+  // Set the display to show the default configuration.
+  lc.setChar( 0, 7, 'P', false);
+  lc.setChar( 0, 6, '-', false);
+  lc.setChar( 0, 1, gD(model, 1), false);
+  lc.setChar( 0, 0, gD(model, 0), false);
+  lc.setChar( 0, 2, 'C', false);
+  lc.setChar( 0, 5, gD(program, 1), false);
+  lc.setChar( 0, 4, gD(program, 0), false);
+
+  if (!digitalRead(enter)) { // SELECT THE DESIRED PROGRAM AND GO ON
+    lc.clearDisplay(0);
+    weAreInModeSelection = true; 
+    while (!digitalRead(enter)) { // Wait until switch is released to continue
+    }
+    delay(5); // Small delay to debounce the switch
+  }
+  if (!digitalRead(plus)) { // Promgram +
+    program++;
+    while (!digitalRead(plus)) { // Wait until switch is released to continue
+    }
+    delay(5); // Small delay to debounce the switch
+  }
+  if (!digitalRead(minus)) {
+    program--;
+    while (!digitalRead(minus)) {
+    }
+    delay(5);
+  }
+  // Set limit for mode
+  if (program > 4) {
+    program = 1;
+  }
+  if (program < 1) {
+    program = 4;
+  }
+  return program;
+}
+
+void returnMainScreen() { // go back to main screen from another mode
+  if (!digitalRead(back)) { // Go back to main page
+    lc.clearDisplay(0);
+    weAreInModeSelection = false;
+    while (!digitalRead(back)) {
+    }
+    delay(5);
+  }
+}
+
+void  singleShot() { // Used for taking pictures in manual mode with a chronometer.
+  if (!digitalRead(go)) { // Take a single shot and start de clock.
+    takePhoto(model);
+    while (!digitalRead(go)) {
+    }
+    delay(5);
+    lc.clearDisplay(0);
+    for (int k = 0; k <= 99999; k++) { // Chronometer 4 digits plus one decimal
+      lc.setDigit(0, 4, gD(k, 4), false);
+      lc.setDigit(0, 3, gD(k, 3), false);
+      lc.setDigit(0, 2, gD(k, 2), false);
+      lc.setDigit(0, 1, gD(k, 1), true);
+      lc.setDigit(0, 0, gD(k, 0), false);
+
+      if (!digitalRead(go)) { // Take another shot and start the time again
+        takePhoto(model);
+        k = 0;
+        while (!digitalRead(go)) {
+        }
+        delay(5);
+      }
+
+      if (!digitalRead(back)) { // Stop and go to main screen
+        returnMainScreen();
+        break;
+        while (!digitalRead(back)) {
+        }
+        delay(5);
+      }
+
+      delay(99); // realtime clock!!! lol, just kidding, this is a fucking crap....
+    }
+  }
+}
+
+void shutterTime() { // Shutter time fixed to a number and shot every X interval time.
+
+  // Default values at the start
+  lc.setDigit(0, 7, gD(shutter, 2), false); lc.setDigit(0, 6, gD(shutter, 1), false); lc.setDigit(0, 5, gD(shutter, 0), false);
+  lc.setDigit(0, 2, gD(interval, 2), false); lc.setDigit(0, 1, gD(interval, 1), false); lc.setDigit(0, 0, gD(interval, 0), false);
+  
+  if (shutter_interval_start && shutter > 0 && interval > 0) { // Start only if the interval and shutter time are not 0.
+    while (shutter_interval_start) {
+      takePhoto(model);
+      for (int i = shutter; i > 0; i--) {
+        lc.setDigit(0, 7, gD(i, 2), false);
+        lc.setDigit(0, 6, gD(i, 1), false);
+        lc.setDigit(0, 5, gD(i, 0), false);
+        delay(999);
+      }
+      takePhoto(model);
+      lc.setDigit(0, 7, gD(shutter, 2), false); lc.setDigit(0, 6, gD(shutter, 1), false); lc.setDigit(0, 5, gD(shutter, 0), false);
+
+      if (!digitalRead(go)) {
+        shutter_interval_start = false;
+        while (!digitalRead(go)) {
+        }
+        delay(5);
+      }
+      delay(interval * 1000);
+    }
+  }
+  if (!digitalRead(go)) {
+    shutter_interval_start = true;
+    while (!digitalRead(go)) {
+    }
+    delay(5);
+  }
+  if (!digitalRead(enter)) { // SELECT BETWEEN SHUTTER AND INTERVAL COUNTER
+    if (!shutter_interval) {
+      shutter_interval = true;
+    } else {
+      shutter_interval = false;
+    }
+    while (!digitalRead(enter)) {
+    }
+    delay(5);
+  }
+  if (!shutter_interval) {
+    if (!digitalRead(plus)) {
+      shutter++;
+      lc.setDigit(0, 7, gD(shutter, 2), false);
+      lc.setDigit(0, 6, gD(shutter, 1), false);
+      lc.setDigit(0, 5, gD(shutter, 0), false);
+      while (!digitalRead(plus)) {
+      }
+      delay(5);
+    }
+    if (!digitalRead(minus)) {
+      shutter--;
+      if (shutter < 0) {
+        shutter = 0;
+      }
+      lc.setDigit(0, 7, gD(shutter, 2), false);
+      lc.setDigit(0, 6, gD(shutter, 1), false);
+      lc.setDigit(0, 5, gD(shutter, 0), false);
+      while (!digitalRead(minus)) {
+      }
+      delay(5);
+    }
+  } else {
+    if (!digitalRead(plus)) {
+      interval++;
+      lc.setDigit(0, 2, gD(interval, 2), false);
+      lc.setDigit(0, 1, gD(interval, 1), false);
+      lc.setDigit(0, 0, gD(interval, 0), false);
+      while (!digitalRead(plus)) {
+      }
+      delay(5);
+    }
+    if (!digitalRead(minus)) {
+      interval--;
+      if (interval < 0) {
+        interval = 0;
+      }
+      lc.setDigit(0, 2, gD(interval, 2), false);
+      lc.setDigit(0, 1, gD(interval, 1), false);
+      lc.setDigit(0, 0, gD(interval, 0), false);
+      while (!digitalRead(minus)) {
+      }
+      delay(5);
+    }
+  }
+}
+
+void timeLapse() {
+  lc.setDigit(0, 7, gD(numPictures, 3), false); lc.setDigit(0, 6, gD(numPictures, 2), false); lc.setDigit(0, 5, gD(numPictures, 1), false); lc.setDigit(0, 4, gD(numPictures, 0), false);
+  lc.setDigit(0, 3,  gD(intervalLapse, 3), false); lc.setDigit(0, 2,  gD(intervalLapse, 2), false); lc.setDigit(0, 1,  gD(intervalLapse, 1), true); lc.setDigit(0, 0,  gD(intervalLapse, 0), false);
+
+  if (time_Lapse_start && numPictures > 0 && intervalLapse > 0) { // We are takking pictures right now.
+    while (numPictures > 0) {
+      numPictures--;
+      lc.setDigit(0, 7, gD(numPictures, 3), false);
+      lc.setDigit(0, 6, gD(numPictures, 2), false);
+      lc.setDigit(0, 5, gD(numPictures, 1), false);
+      lc.setDigit(0, 4, gD(numPictures, 0), false);
+      takePhoto(model);
+      delay(intervalLapse * 100);
+      if (!digitalRead(go)) {
+        time_Lapse_start = false;
+        storeNum = numPictures;
+        numPictures = 0;
+        while (!digitalRead(go)) {
+        }
+        delay(5);
+      }
+    }
+    time_Lapse_start = false;
+    numPictures = storeNum;
+  }
+  if (!digitalRead(go)) {
+    time_Lapse_start = true;
+    while (!digitalRead(go)) {
+    }
+    delay(5);
+  }
+
+  if (!digitalRead(enter)) {
+    if (!lapse_interval) {
+      lapse_interval = true;
+    } else {
+      lapse_interval = false;
+    }
+    while (!digitalRead(enter)) {
+    }
+    delay(5);
+  }
+  if (!lapse_interval) {
+    if (!digitalRead(plus)) {
+      numPictures =  numPictures + 10;
+      lc.setDigit(0, 7, gD(numPictures, 3), false);
+      lc.setDigit(0, 6, gD(numPictures, 2), false);
+      lc.setDigit(0, 5, gD(numPictures, 1), false);
+      lc.setDigit(0, 4, gD(numPictures, 0), false);
+      while (!digitalRead(plus)) {
+      }
+      delay(5);
+    }
+    if (!digitalRead(minus)) {
+      numPictures =  numPictures - 10;
+      if (numPictures < 0) {
+        numPictures = 0;
+      }
+      lc.setDigit(0, 7, gD(numPictures, 3), false);
+      lc.setDigit(0, 6, gD(numPictures, 2), false);
+      lc.setDigit(0, 5, gD(numPictures, 1), false);
+      lc.setDigit(0, 4, gD(numPictures, 0), false);
+      while (!digitalRead(minus)) {
+      }
+      delay(5);
+    }
+  } else {
+    if (!digitalRead(plus)) {
+      intervalLapse = intervalLapse + 5;
+      lc.setDigit(0, 3, gD(intervalLapse, 3), false);
+      lc.setDigit(0, 2, gD(intervalLapse, 2), false);
+      lc.setDigit(0, 1, gD(intervalLapse, 1), true);
+      lc.setDigit(0, 0, gD(intervalLapse, 0), false);
+      while (!digitalRead(plus)) {
+      }
+      delay(5);
+    }
+    if (!digitalRead(minus)) {
+      intervalLapse = intervalLapse - 5;
+      if (intervalLapse < 0) {
+        intervalLapse = 0;
+      }
+      lc.setDigit(0, 3, gD(intervalLapse, 3), false);
+      lc.setDigit(0, 2, gD(intervalLapse, 2), false);
+      lc.setDigit(0, 1, gD(intervalLapse, 1), true);
+      lc.setDigit(0, 0, gD(intervalLapse, 0), false);
+      while (!digitalRead(minus)) {
+      }
+      delay(5);
+    }
+  }
+}
+
+void changeModel() {
+  lc.setChar( 0, 7, 'C', false);
+  lc.setChar( 0, 6, '-', false);
+  lc.setChar( 0, 5,  gD(model, 1), false);
+  lc.setChar( 0, 4,  gD(model, 0), false);
+
+  if (!digitalRead(enter)) {
+    lc.clearDisplay(0);
+    weAreInModeSelection = true;
+    while (!digitalRead(enter)) {
+    }
+    delay(5);
+  }
+  if (!digitalRead(plus)) {
+    model++;
+    while (!digitalRead(plus)) {
+    }
+    delay(5);
+  }
+  if (!digitalRead(minus)) {
+    model--;
+    while (!digitalRead(minus)) {
+    }
+    delay(5);
+  }
+  // Set limit for mode
+  if (model < 1) {
+    model = 1;
+  }
+  return model;
+}
+
+void takePhoto(int value) {
+  switch (value) {
+    case 1: // NIKON
+      int i;
+      for (i = 0; i < 76; i++) {
+        digitalWrite(IR_EMITTER, HIGH);
+        delayMicroseconds(7);
+        digitalWrite(IR_EMITTER, LOW);
+        delayMicroseconds(7);
+      }
+      delay(27);
+      delayMicroseconds(810);
+      for (i = 0; i < 16; i++) {
+        digitalWrite(IR_EMITTER, HIGH);
+        delayMicroseconds(7);
+        digitalWrite(IR_EMITTER, LOW);
+        delayMicroseconds(7);
+      }
+      delayMicroseconds(1540);
+      for (i = 0; i < 16; i++) {
+        digitalWrite(IR_EMITTER, HIGH);
+        delayMicroseconds(7);
+        digitalWrite(IR_EMITTER, LOW);
+        delayMicroseconds(7);
+      }
+      delayMicroseconds(3545);
+      for (i = 0; i < 16; i++) {
+        digitalWrite(IR_EMITTER, HIGH);
+        delayMicroseconds(7);
+        digitalWrite(IR_EMITTER, LOW);
+        delayMicroseconds(7);
+      }
+      break;
+
+    case 2: // CANON
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+
+    case 3: // SONY
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+    case 4: // PENTAX
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+    case 5: // PANASONIC
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+    case 6: // OLYMPUS
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+    case 7: // LEICA
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+    case 8: // SIGMA
+      //////////////////////////
+      /// PUT YOUR CODE HERE ///
+      //////////////////////////
+      break;
+  }
+}
