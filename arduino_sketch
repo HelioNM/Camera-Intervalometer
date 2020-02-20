@@ -1,3 +1,28 @@
+/***********************************************************************
+Credits goes to George Christidis, he mades the original ir emmiter function that i'm using in this project. 
+https://www.christidis.info/index.php/personal-projects/arduino-nikon-infrared-command-code
+  
+  Components
+  
+1 x 330ohms resisotor
+5 x 10komhs resistors
+1 x IR emmiter (from an old tv remote controler or something like that)
+6 x push buttons
+1 x MAX7219 8 Bits Digital Segment LED Display
+1 x Arduino uno
+
+  Building
+  
+IR EMMITER   -> Negative to ground, positive in series with a 330ohm resistor to pin 7
+Reset Button -> Negative to ground, positive to reset pin
+Button Plus  -> Negative to ground, positive pin to 2 and bridge it with a 10kohm resistor to 5v
+Button Minus -> Negative to ground, positive pin to 3 and bridge it with a 10kohm resistor to 5v
+Button Enter -> Negative to ground, positive pin to 4 and bridge it with a 10kohm resistor to 5v
+Button Back  -> Negative to ground, positive pin to 5 and bridge it with a 10kohm resistor to 5v
+Button GO    -> Negative to ground, positive pin to 6 and bridge it with a 10kohm resistor to 5v
+LCD SCREEN   -> DIN pin 12, CLK pin 10, LOAD pin 9, ground to ground, vcc to 5v
+***********************************************************************/
+
 ////////////////////////////////////////////////////////////////////////
 //////////////// DEFINE YOUR CAMERA MODEL AS DEFAULT ///////////////////
 ////////////////////////////////////////////////////////////////////////
@@ -87,7 +112,6 @@ void loop() {
         returnMainScreen();
         break;
     }
-
   }
 }
 
